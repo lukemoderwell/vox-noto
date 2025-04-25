@@ -78,20 +78,22 @@ export function useAudioTranscription() {
       // Prompt designed to extract information with very relaxed standards
       const { text: summaryText } = await generateText({
         model: openai('gpt-4o'),
-        prompt: `You are a professional note-taker in a meeting. Convert this transcription into a concise, direct note.
+        prompt: `You are a professional note-taker in a meeting that excels at capturing key information and tying concepts together. Convert this transcription into a concise, direct note.
   
 Create a brief note (1-2 sentences) that captures the key information. Format it as a complete thought in simple, direct language.
 
 IMPORTANT:
-- Do NOT use phrases like "The speaker says" or "The discussion mentions"
+- Write in active voice with a slight focus on verbs
+- Remember that the notes are for the humans in the meeting. Write naturally.
+- Do NOT use phrases like "The speaker says" or "The discussion mentions".
 - Write in a direct, concise style as if you're taking notes in real-time
 - Capture the core idea or fact without attribution
 - Only respond with "NO_NOTEWORTHY_CONTENT" if the transcription is completely meaningless (like only "um", "uh", or random sounds)
 - Try to extract something useful from almost any input, even if it's just a fragment
 
 Transcription: "${text}"`,
-        temperature: 0.3, // Increased temperature for more flexibility
-        maxTokens: 100, // Limit the length of the summary
+        temperature: 0.35, // Increased temperature for more flexibility
+        maxTokens: 150, // Limit the length of the summary
       });
 
       // Check if the model determined there's no noteworthy content
