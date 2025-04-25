@@ -6,7 +6,6 @@ import { useState, useRef, useCallback, useEffect } from "react"
 import { NoteCard } from "@/components/note-card"
 import { Toolbar } from "@/components/toolbar"
 import { AudioVisualizer } from "@/components/audio-visualizer"
-import { CardCreator } from "@/components/card-creator"
 import { useAudioTranscription } from "@/hooks/use-audio-transcription"
 import type { Note, Position } from "@/types"
 import { generateUniqueId } from "@/lib/utils"
@@ -26,6 +25,7 @@ export function Canvas() {
   const [panStart, setPanStart] = useState({ x: 0, y: 0 })
   const [isSpacePressed, setIsSpacePressed] = useState(false)
   const [isSpaceDragging, setIsSpaceDragging] = useState(false)
+  const [lastCreatedNoteId, setLastCreatedNoteId] = useState<string | null>(null)
 
   const canvasRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
@@ -127,6 +127,47 @@ export function Canvas() {
     }
   }, [isRecording])
 
+  // Focus the newly created note
+  useEffect(() => {
+    if (lastCreatedNoteId) {
+      // Use a small timeout to ensure the DOM has updated
+      const timeoutId = setTimeout(() => {
+        const noteElement = document.querySelector(`[data-note-id="${lastCreatedNoteId}"] textarea`)
+        if (noteElement instanceof HTMLTextAreaElement) {
+          noteElement.focus()
+          // Place cursor at the end of any existing text
+          noteElement.selectionStart = noteElement.value.length
+          noteElement.selectionEnd = noteElement.value.length
+        }
+        // Clear the last created note ID after focusing
+        setLastCreatedNoteId(null)
+      }, 50)
+
+      return () => clearTimeout(timeoutId)
+    }
+  }, [lastCreatedNoteId])
+
+  // Get a visible position within the canvas
+  const getVisiblePosition = useCallback((): Position => {
+    if (!canvasRef.current) return { x: 100, y: 100 }
+
+    const rect = canvasRef.current.getBoundingClientRect()
+
+    // Calculate the center of the visible area
+    const centerX = rect.width / 2
+    const centerY = rect.height / 2
+
+    // Add some randomness to avoid stacking
+    const randomOffsetX = Math.random() * 100 - 50
+    const randomOffsetY = Math.random() * 100 - 50
+
+    // Calculate position considering the current zoom level and pan offset
+    return {
+      x: (centerX + randomOffsetX - panOffset.x) / zoomLevel,
+      y: (centerY + randomOffsetY - panOffset.y) / zoomLevel,
+    }
+  }, [zoomLevel, panOffset])
+
   // Get a random position within the canvas - no dependencies to avoid recreation
   const getRandomPosition = useCallback((): Position => {
     const canvasWidth = canvasRef.current?.clientWidth || 800
@@ -167,58 +208,16 @@ export function Canvas() {
 
       setNotes((prevNotes) => [...prevNotes, newNote])
       setSelectedNote(newNote.id)
+      setLastCreatedNoteId(newNote.id)
     },
     [selectedColor],
   )
 
-  // Add a new note from the card creator - using function form of setState to avoid dependency on notes
-  const addCardFromCreator = useCallback(
-    (note: Note) => {
-      setNotes((prevNotes) => {
-        // Check for duplicates or similar content
-        const existingContents = prevNotes.map((existingNote) => existingNote.content)
-
-        if (isSimilarToExisting(note.content, existingContents)) {
-          console.log("Similar content detected in manual note, skipping creation")
-          // Return unchanged state to indicate no note was added
-          return prevNotes
-        }
-
-        // Calculate position based on the current notes array
-        const canvasWidth = canvasRef.current?.clientWidth || 800
-        const canvasHeight = canvasRef.current?.clientHeight || 600
-
-        const columns = Math.floor(canvasWidth / 300)
-        const rows = Math.floor(canvasHeight / 200)
-
-        const noteCount = prevNotes.length
-        const column = noteCount % columns
-        const row = Math.floor(noteCount / columns) % rows
-
-        const randomOffsetX = Math.random() * 50 - 25
-        const randomOffsetY = Math.random() * 50 - 25
-
-        // Calculate position considering the current zoom level and pan offset
-        const position = {
-          x: (column * 300 + 50 + randomOffsetX - panOffset.x) / zoomLevel,
-          y: (row * 200 + 50 + randomOffsetY - panOffset.y) / zoomLevel,
-        }
-
-        // Add to processed contents to prevent future duplicates
-        processedContentsRef.current.add(note.content.trim())
-
-        // Return the new notes array with the new note added
-        return [
-          ...prevNotes,
-          {
-            ...note,
-            position,
-          },
-        ]
-      })
-    },
-    [zoomLevel, panOffset],
-  ) // Dependencies needed for correct positioning
+  // Quick add a new note in the visible area
+  const quickAddNote = useCallback(() => {
+    const position = getVisiblePosition()
+    addNote(position)
+  }, [addNote, getVisiblePosition])
 
   // Update a note's content
   const updateNoteContent = useCallback((id: string, content: string) => {
@@ -326,6 +325,21 @@ export function Canvas() {
   // Handle keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Skip if we're in an input or textarea
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLSelectElement
+      ) {
+        return
+      }
+
+      // 'n' key for quick add note
+      if (e.key === "n" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault()
+        quickAddNote()
+      }
+
       // Space bar pressed
       if (e.code === "Space" && !e.repeat) {
         setIsSpacePressed(true)
@@ -373,7 +387,7 @@ export function Canvas() {
       window.removeEventListener("keydown", handleKeyDown)
       window.removeEventListener("keyup", handleKeyUp)
     }
-  }, [zoomIn, zoomOut, resetZoom])
+  }, [zoomIn, zoomOut, resetZoom, quickAddNote])
 
   // Handle mouse down for panning
   const handleMouseDown = useCallback(
@@ -518,6 +532,9 @@ export function Canvas() {
           <p>
             Hold <kbd className="px-1.5 py-0.5 bg-gray-100 border border-gray-300 rounded">Space</kbd> + drag to scroll
           </p>
+          <p className="mt-1">
+            Press <kbd className="px-1.5 py-0.5 bg-gray-100 border border-gray-300 rounded">n</kbd> to add a new note
+          </p>
         </div>
 
         {/* Zoom and pan container */}
@@ -544,9 +561,6 @@ export function Canvas() {
             />
           ))}
         </div>
-
-        {/* Card Creator */}
-        <CardCreator selectedColor={selectedColor} onColorSelect={setSelectedColor} onAddCard={addCardFromCreator} />
       </div>
     </div>
   )
