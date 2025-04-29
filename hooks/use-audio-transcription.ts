@@ -77,10 +77,10 @@ export function useAudioTranscription() {
 
       // Prompt designed to extract information with very relaxed standards
       const { text: summaryText } = await generateText({
-        model: openai('gpt-4o'),
-        prompt: `You are a professional note-taker in a meeting that excels at capturing key information and tying concepts together. Convert this transcription into a concise, direct note.
+        model: openai('gpt-4.1-nano-2025-04-14'),
+        prompt: `You are a professional note-taker in a story-mapping meeting that excels at capturing key information and tying concepts together. Your main goal is to capture details and create notes on the story-map. Convert this transcription into a concise, direct note.
   
-Create a brief note (1-2 sentences) that captures the key information. Format it as a complete thought in simple, direct language.
+Create a brief note (1 sentence or less) that captures the key information. Format it as a complete thought in simple, direct language.
 
 IMPORTANT:
 - Write in active voice with a slight focus on verbs
@@ -90,6 +90,7 @@ IMPORTANT:
 - Capture the core idea or fact without attribution
 - Only respond with "NO_NOTEWORTHY_CONTENT" if the transcription is completely meaningless (like only "um", "uh", or random sounds)
 - Try to extract something useful from almost any input, even if it's just a fragment
+- If the transcription is a question, capture the question and answer as two separate notes
 
 Transcription: "${text}"`,
         temperature: 0.35, // Increased temperature for more flexibility
@@ -445,22 +446,34 @@ Transcription: "${text}"`,
             }
           } else {
             // Handle case where no text was generated
-            console.warn('No transcription text returned or empty text', result);
-            
+            console.warn(
+              'No transcription text returned or empty text',
+              result
+            );
+
             // Only increment error count if we were expecting speech
             if (audioLevel > 0.1) {
-              handleTranscriptionError(new Error('No transcription text returned'));
+              handleTranscriptionError(
+                new Error('No transcription text returned')
+              );
             } else {
               // If audio level was low, this might be expected
-              console.log('Low audio level detected, skipping empty transcription');
+              console.log(
+                'Low audio level detected, skipping empty transcription'
+              );
             }
           }
         } catch (transcriptionError: unknown) {
           console.error('Transcription API error:', transcriptionError);
-          
+
           // Check if this is a "no transcript" error
-          if (transcriptionError instanceof Error && transcriptionError.message.includes('No transcript generated')) {
-            console.warn('Whisper API returned no transcript - this may be normal for silence');
+          if (
+            transcriptionError instanceof Error &&
+            transcriptionError.message.includes('No transcript generated')
+          ) {
+            console.warn(
+              'Whisper API returned no transcript - this may be normal for silence'
+            );
             // Only increment error count if we were expecting speech
             if (audioLevel > 0.1) {
               handleTranscriptionError(transcriptionError);
