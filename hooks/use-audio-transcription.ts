@@ -372,8 +372,8 @@ Transcription: "${text}"`,
           `Audio blob size: ${audioBlob.size} bytes, MIME type: ${mimeType}`
         );
 
+        // Check if the audio blob is too small or empty
         if (audioBlob.size < 800) {
-          // Reduced from 1000 to 800 bytes
           console.warn('Audio blob is too small, skipping transcription');
           setIsProcessing(false);
 
@@ -422,7 +422,8 @@ Transcription: "${text}"`,
           // Reset error count on successful transcription
           transcriptionErrorCountRef.current = 0;
 
-          if (result && result.text) {
+          // Check if we got a valid result with text
+          if (result && result.text && result.text.trim() !== '') {
             console.log('Transcription successful:', result.text);
 
             // Accumulate transcriptions instead of immediately processing
@@ -433,26 +434,42 @@ Transcription: "${text}"`,
             );
 
             // Add a periodic check to process content even if no pause is detected
-            // This ensures we don't wait too long between processing
             const now = Date.now();
             const timeSinceLastProcessing = now - lastProcessingTimeRef.current;
             if (
               timeSinceLastProcessing > 3000 &&
               accumulatedTranscriptionRef.current.trim().length > 0
             ) {
-              // Reduced from 5000ms to 3000ms
               console.log('Processing due to time threshold');
               processAccumulatedContent();
             }
           } else {
-            console.error('No transcription text returned', result);
-            handleTranscriptionError(
-              new Error('No transcription text returned')
-            );
+            // Handle case where no text was generated
+            console.warn('No transcription text returned or empty text', result);
+            
+            // Only increment error count if we were expecting speech
+            if (audioLevel > 0.1) {
+              handleTranscriptionError(new Error('No transcription text returned'));
+            } else {
+              // If audio level was low, this might be expected
+              console.log('Low audio level detected, skipping empty transcription');
+            }
           }
-        } catch (transcriptionError) {
+        } catch (transcriptionError: unknown) {
           console.error('Transcription API error:', transcriptionError);
-          handleTranscriptionError(transcriptionError as Error);
+          
+          // Check if this is a "no transcript" error
+          if (transcriptionError instanceof Error && transcriptionError.message.includes('No transcript generated')) {
+            console.warn('Whisper API returned no transcript - this may be normal for silence');
+            // Only increment error count if we were expecting speech
+            if (audioLevel > 0.1) {
+              handleTranscriptionError(transcriptionError);
+            }
+          } else if (transcriptionError instanceof Error) {
+            handleTranscriptionError(transcriptionError);
+          } else {
+            handleTranscriptionError(new Error('Unknown transcription error'));
+          }
         }
       } catch (error) {
         console.error('Audio processing error:', error);
